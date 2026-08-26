@@ -64,6 +64,14 @@ type Config struct {
 	// many ledgers behind the chain head. Zero disables the alarm.
 	LagWarnLedgers uint32 `env:"LAG_WARN_LEDGERS" envDefault:"100"`
 
+	// Ingester retry backoff. A zero jitter max preserves the ingester's
+	// proportional jitter behavior; non-zero bounds make the random range
+	// explicit.
+	IngesterMinBackoff time.Duration `env:"INGESTER_MIN_BACKOFF" envDefault:"1s"`
+	IngesterMaxBackoff time.Duration `env:"INGESTER_MAX_BACKOFF" envDefault:"1m"`
+	IngesterJitterMin  time.Duration `env:"INGESTER_JITTER_MIN" envDefault:"0"`
+	IngesterJitterMax  time.Duration `env:"INGESTER_JITTER_MAX" envDefault:"0"`
+
 	// GraphQLPlayground gates the dev-mode GraphiQL UI at /graphiql.
 	GraphQLPlayground bool `env:"GRAPHQL_PLAYGROUND"`
 
@@ -588,6 +596,10 @@ func (c Config) LoggableFields() []any {
 		"rpc_base_backoff", c.RPCBaseBackoff,
 		"rpc_max_backoff", c.RPCMaxBackoff,
 		"rpc_jitter", c.RPCJitter,
+		"ingester_min_backoff", c.IngesterMinBackoff,
+		"ingester_max_backoff", c.IngesterMaxBackoff,
+		"ingester_jitter_min", c.IngesterJitterMin,
+		"ingester_jitter_max", c.IngesterJitterMax,
 		"rpc_rate_limit", c.RPCRateLimit,
 		"database_url", dbURL,
 		"poll_interval", c.PollInterval,

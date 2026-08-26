@@ -143,6 +143,10 @@ All configuration comes from environment variables (see `.env.example`):
 | `RPC_BASE_BACKOFF` | `500ms` | Initial retry backoff duration; doubles on each subsequent retry. |
 | `RPC_MAX_BACKOFF` | `30s` | Upper bound on the computed retry backoff. |
 | `RPC_JITTER` | `true` | Randomize each computed backoff to [0.5×, 1.5×) so concurrent retries don't thundering-herd the endpoint. Never applied to a provider's `Retry-After` hint. |
+| `INGESTER_MIN_BACKOFF` | `1s` | Initial error backoff for the ingester. |
+| `INGESTER_MAX_BACKOFF` | `1m` | Maximum error backoff for the ingester. |
+| `INGESTER_JITTER_MIN` | `0` | Minimum additive jitter for ingester errors. |
+| `INGESTER_JITTER_MAX` | `0` | Exclusive maximum additive jitter. Zero preserves proportional jitter up to half the current backoff. |
 | `RPC_URLS` | unset | Comma-separated, priority-ordered list of Stellar RPC endpoints. When set, `RPC_URL` is ignored and the multi-provider failover client is used. List order is priority: index 0 is tried first. |
 | `RPC_RATE_LIMIT_RPS` | `10` | Per-provider request rate limit (`requests/second`) applied to each RPC endpoint independently. Only used when `RPC_URLS` is set. |
 | `HORIZON_URL` | `https://horizon-testnet.stellar.org` | Stellar Horizon REST endpoint used by `sorotrail backfill` only. Live ingestion does not touch Horizon. |

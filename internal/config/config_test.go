@@ -31,6 +31,7 @@ var envKeys = []string{
 	"RETENTION_MAX_AGE", "RETENTION_MIN_LEDGER", "RETENTION_BATCH_SIZE",
 	"RETENTION_PAUSE", "RETENTION_INTERVAL",
 	"RPC_MAX_ATTEMPTS", "RPC_BASE_BACKOFF", "RPC_MAX_BACKOFF", "RPC_JITTER",
+	"INGESTER_MIN_BACKOFF", "INGESTER_MAX_BACKOFF", "INGESTER_JITTER_MIN", "INGESTER_JITTER_MAX",
 	"METRICS_ENABLED", "ENABLE_METRICS", "CACHE_PRIVATE", "COMPRESS_MIN_SIZE",
 	"EXPORT_MAX_RANGE", "REORG_CONFIRMATION_WINDOW", "REORG_RESCAN_INTERVAL",
 	"SWEEP_CONCURRENCY", "API_MAX_LIMIT",
@@ -56,6 +57,26 @@ func TestLoad(t *testing.T) {
 				assert.Empty(t, c.WatchedContracts)
 				assert.Equal(t, uint32(100), c.LagWarnLedgers,
 					"LagWarnLedgers default lets the lag alarm work out of the box")
+				assert.Equal(t, time.Second, c.IngesterMinBackoff)
+				assert.Equal(t, time.Minute, c.IngesterMaxBackoff)
+				assert.Zero(t, c.IngesterJitterMin)
+				assert.Zero(t, c.IngesterJitterMax)
+			},
+		},
+		{
+			name: "ingester backoff bounds configurable",
+			env: map[string]string{
+				"DATABASE_URL":         "postgres://localhost/db",
+				"INGESTER_MIN_BACKOFF": "2s",
+				"INGESTER_MAX_BACKOFF": "20s",
+				"INGESTER_JITTER_MIN":  "100ms",
+				"INGESTER_JITTER_MAX":  "500ms",
+			},
+			check: func(t *testing.T, c Config) {
+				assert.Equal(t, 2*time.Second, c.IngesterMinBackoff)
+				assert.Equal(t, 20*time.Second, c.IngesterMaxBackoff)
+				assert.Equal(t, 100*time.Millisecond, c.IngesterJitterMin)
+				assert.Equal(t, 500*time.Millisecond, c.IngesterJitterMax)
 			},
 		},
 		{

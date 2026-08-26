@@ -1726,6 +1726,55 @@ func TestIngester_LogAttrsEffectiveConfig(t *testing.T) {
 	}
 }
 
+func TestIngester_BackoffSleepBounds(t *testing.T) {
+	tests := []struct {
+		name    string
+		opts    Options
+		backoff time.Duration
+		jitter  time.Duration
+		want    time.Duration
+	}{
+		{
+			name:    "legacy proportional jitter",
+			opts:    Options{Jitter: func(time.Duration) time.Duration { return 0 }},
+			backoff: time.Second,
+			want:    500 * time.Millisecond,
+		},
+		{
+			name: "configured jitter bounds",
+			opts: Options{
+				JitterMin: 100 * time.Millisecond,
+				JitterMax: 300 * time.Millisecond,
+				Jitter: func(max time.Duration) time.Duration {
+					return max - time.Nanosecond
+				},
+			},
+			backoff: time.Second,
+			want:    799*time.Millisecond + 999999*time.Nanosecond,
+		},
+		{
+			name: "equal jitter bounds are fixed",
+			opts: Options{
+				JitterMin: 250 * time.Millisecond,
+				JitterMax: 250 * time.Millisecond,
+				Jitter: func(time.Duration) time.Duration {
+					return time.Hour
+				},
+			},
+			backoff: time.Second,
+			want:    750 * time.Millisecond,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tt.opts.applyDefaults()
+			ing := &Ingester{opts: tt.opts}
+			got := ing.backoffSleep(tt.backoff)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
 // TestRun_EmitsStartedAndStoppedLogs proves both lifecycle lines fire
 // through the real Run loop: "ingester started" once on entry with the
 // config fields attached, "ingester stopped" once with the exit reason.
