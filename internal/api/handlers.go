@@ -502,6 +502,9 @@ func (s *Server) handleDeleteEvents(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, errors.New("deleting events failed"))
 		return
 	}
+	// A destructive write must never be replayed from a cache: the same
+	// URL answered twice could delete a different range the second time.
+	writeCacheHeaders(w, cacheNoStore, 0, "")
 	writeJSON(w, http.StatusOK, map[string]int64{"deleted": deleted})
 }
 
@@ -1670,6 +1673,9 @@ func (s *Server) handleListWatchedChains(w http.ResponseWriter, r *http.Request)
 
 	}
 
+	// The watch list is operator state that changes whenever a contract
+	// is added or removed; a cached copy would silently go stale.
+	writeCacheHeaders(w, cacheNoStore, 0, "")
 	writeJSON(w, http.StatusOK, watchedListResponse{Contracts: contracts, Count: len(contracts)})
 
 }
@@ -1770,6 +1776,10 @@ func (s *Server) handleAddWatchedChain(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// A write whose result depends on ingestion state must never be
+	// replayed from a cache.
+	writeCacheHeaders(w, cacheNoStore, 0, "")
+
 	writeJSON(w, http.StatusOK, addWatchedResponse{
 
 		ContractID: req.ContractID,
@@ -1846,6 +1856,10 @@ func (s *Server) handleRemoveWatchedChain(w http.ResponseWriter, r *http.Request
 		return
 
 	}
+
+	// A write whose result depends on ingestion state must never be
+	// replayed from a cache.
+	writeCacheHeaders(w, cacheNoStore, 0, "")
 
 	writeJSON(w, http.StatusOK, removeWatchedResponse{
 

@@ -97,6 +97,8 @@ type stubStore struct {
 	deadLettersCursor string
 	deadLettersErr    error
 
+	subscriptions []store.Subscription
+
 	contractCursors map[string]store.ContractCursor
 }
 
@@ -264,7 +266,7 @@ func (s *stubStore) GetSubscription(_ context.Context, id int64, _ store.Subscri
 	return store.Subscription{}, store.ErrNotFound
 }
 func (s *stubStore) ListSubscriptions(context.Context, store.SubscriptionOwner) ([]store.Subscription, error) {
-	return nil, nil
+	return s.subscriptions, nil
 }
 func (s *stubStore) UpdateSubscription(_ context.Context, sub store.Subscription, _ store.SubscriptionOwner) (store.Subscription, error) {
 	return sub, nil
