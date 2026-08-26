@@ -1091,6 +1091,17 @@ func TestLoad(t *testing.T) {
 	}
 }
 
+func TestLoad_UsesProcessEnvironmentInsteadOfDotEnv(t *testing.T) {
+	t.Chdir(t.TempDir())
+	require.NoError(t, os.WriteFile(".env", []byte("LOG_LEVEL=warn\n"), 0o600))
+	t.Setenv("DATABASE_URL", "postgres://localhost/db")
+	t.Setenv("LOG_LEVEL", "debug")
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	assert.Equal(t, "debug", cfg.LogLevel)
+}
+
 func TestValidOrigin(t *testing.T) {
 	assert.True(t, ValidOrigin("*"))
 	assert.True(t, ValidOrigin("https://app.example.com"))
