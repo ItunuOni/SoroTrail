@@ -139,7 +139,41 @@ jobs:
       - uses: azure/setup-helm@v5
         with:
           version: v3.15.0
-      - name: Helm lint
+      - name: Helm lint (defaults)
         run: helm lint deploy/helm/sorotrail --set database.url=postgres://user:pass@host:5432/db
-      - name: Helm template render
+      - name: Helm lint (invalid value — schema must reject)
+        run: |
+          if helm lint deploy/helm/sorotrail --set database.url=postgres://user:pass@host:5432/db --set replicaCount=not-a-number; then
+            echo "::error::Schema validation did not reject invalid replicaCount"
+            exit 1
+          fi
+      - name: Helm template render (defaults)
         run: helm template sorotrail deploy/helm/sorotrail --set database.url=postgres://user:pass@host:5432/db > /dev/null
+      - name: Helm template render (existing secret)
+        run: |
+          helm template sorotrail deploy/helm/sorotrail \
+            --set database.existingSecret=my-db-secret \
+            > /dev/null
+      - name: Helm template render (production values)
+        run: |
+          helm template sorotrail deploy/helm/sorotrail \
+            --set database.url=postgres://user:pass@host:5432/db \
+            --set replicaCount=3 \
+            --set pdb.enabled=true \
+            --set pdb.minAvailable=1 \
+            --set config.rpcUrl=https://soroban-mainnet.stellar.org \
+            --set config.logLevel=warn \
+            --set config.enableMetrics=true \
+            --set serviceMonitor.enabled=true \
+            --set resources.requests.cpu=250m \
+            --set resources.requests.memory=256Mi \
+            --set resources.limits.cpu=1000m \
+            --set resources.limits.memory=512Mi \
+            > /dev/null
+      - name: Helm template render (minimal overrides)
+        run: |
+          helm template sorotrail deploy/helm/sorotrail \
+            --set database.url=postgres://user:pass@host:5432/db \
+            --set image.tag=v1.2.3 \
+            --set config.watchedContracts=CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC \
+            > /dev/null
