@@ -299,6 +299,9 @@ type Store interface {
 	// UpsertEvents inserts events idempotently (duplicates by ID are ignored)
 	// and returns the number of newly inserted rows.
 	UpsertEvents(ctx context.Context, events []Event) (int64, error)
+	// PruneEventsBefore deletes events older than cutoff and returns the number
+	// of deleted rows. Events exactly at cutoff are retained.
+	PruneEventsBefore(ctx context.Context, cutoff time.Time) (int64, error)
 	// ReplaceEventsInRange atomically makes [fromLedger, toLedger] in the
 	// store exactly match `events`: orphans (rows in that ledger range that
 	// no longer appear in `events`) are deleted, missing events are

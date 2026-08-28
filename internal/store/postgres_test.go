@@ -288,6 +288,33 @@ func TestQueryEvents_TimeRange(t *testing.T) {
 	})
 }
 
+func TestPruneEventsBefore_DeletesOnlyOlderRows(t *testing.T) {
+	st := testStore(t)
+	ctx := context.Background()
+	cutoff := time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC)
+	events := []Event{
+		testEvent(eventID(1), 100, contractA),
+		testEvent(eventID(2), 101, contractA),
+		testEvent(eventID(3), 102, contractA),
+	}
+	events[0].CreatedAt = cutoff.Add(-time.Second)
+	events[1].CreatedAt = cutoff
+	events[2].CreatedAt = cutoff.Add(time.Second)
+	_, err := st.UpsertEvents(ctx, events)
+	require.NoError(t, err)
+
+	deleted, err := st.PruneEventsBefore(ctx, cutoff)
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), deleted)
+
+	_, err = st.GetEvent(ctx, events[0].ID)
+	assert.ErrorIs(t, err, ErrNotFound)
+	for _, event := range events[1:] {
+		_, err = st.GetEvent(ctx, event.ID)
+		require.NoError(t, err)
+	}
+}
+
 func TestMigrate_UpgradesLegacyEventsTable(t *testing.T) {
 	dbURL := os.Getenv("TEST_DATABASE_URL")
 	if dbURL == "" {

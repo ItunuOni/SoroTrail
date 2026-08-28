@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"sync"
+	"time"
 
 	"github.com/khaylebfortune/sorotrail/internal/rpc"
 	"github.com/khaylebfortune/sorotrail/internal/store"
@@ -73,6 +74,10 @@ func (m *mockStore) UpsertEvents(_ context.Context, events []store.Event) (int64
 		}
 	}
 	return inserted, nil
+}
+
+func (m *mockStore) PruneEventsBefore(context.Context, time.Time) (int64, error) {
+	return 0, nil
 }
 
 func (m *mockStore) ReplaceEventsInRange(_ context.Context, events []store.Event, fromLedger, toLedger int64) error {

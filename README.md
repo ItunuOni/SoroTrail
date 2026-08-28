@@ -56,6 +56,8 @@ All configuration comes from environment variables (see `.env.example`):
 | `WATCHED_CONTRACTS` | empty | Comma-separated contract IDs (`C...`). Empty = ingest **all** contract events. |
 | `START_LEDGER` | unset | Force cold-start ingestion from this ledger. |
 | `RETENTION_LEDGERS` | `17280` | Cold-start reach-back in ledgers (~24h at 5s/ledger). |
+| `RETENTION_AGE` | unset (disabled) | Delete events older than this duration, such as `720h` (30 days). |
+| `RETENTION_POLL_INTERVAL` | `1h` | How often the retention job checks for expired events. |
 | `LOG_LEVEL` | `info` | `debug` \| `info` \| `warn` \| `error`. |
 | `AUDIT_ENABLED` | `false` | Enable the background auditor. When unset/false the binary behaves exactly like the pre-audit build. |
 | `AUDIT_POLL_INTERVAL` | `30s` | Sleep between audit passes. |

@@ -141,6 +141,13 @@ func run() error {
 		// to parse logs to see pass/finding rates.
 		api.SetAuditor(aud)
 	}
+	var pruner *store.RetentionPruner
+	if cfg.RetentionAge > 0 {
+		pruner = store.NewRetentionPruner(st, log, store.RetentionOptions{
+			Age:          cfg.RetentionAge,
+			PollInterval: cfg.RetentionPoll,
+		})
+	}
 
 	// Per-client HTTP rate limiter. Disabled when RATE_LIMIT_RPS or
 	// RATE_LIMIT_BURST is unset; the limiter is then a pass-through and
@@ -158,7 +165,7 @@ func run() error {
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
-	errCh := make(chan error, 4)
+	errCh := make(chan error, 5)
 	go func() {
 		go wh.Run(ctx)
 	}()
@@ -192,11 +199,24 @@ func run() error {
 			}
 		}()
 	}
+	if pruner != nil {
+		go func() {
+			log.Info("event retention pruning starting", "age", cfg.RetentionAge, "poll_interval", cfg.RetentionPoll)
+			if err := pruner.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
+				errCh <- fmt.Errorf("retention pruner: %w", err)
+			} else {
+				errCh <- nil
+			}
+		}()
+	}
 
 	var firstErr error
-	remaining := 3 // ingester + http server + webhook
+	remaining := 2 // ingester + http server; webhook exits with the context
 	if aud != nil {
-		remaining = 4
+		remaining++
+	}
+	if pruner != nil {
+		remaining++
 	}
 	select {
 	case <-ctx.Done():

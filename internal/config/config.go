@@ -21,6 +21,8 @@ type Config struct {
 	WatchedContracts    []string      `env:"WATCHED_CONTRACTS"`
 	StartLedger         uint32        `env:"START_LEDGER"`
 	RetentionLedgers    uint32        `env:"RETENTION_LEDGERS" envDefault:"17280"`
+	RetentionAge        time.Duration `env:"RETENTION_AGE"`
+	RetentionPoll       time.Duration `env:"RETENTION_POLL_INTERVAL" envDefault:"1h"`
 	PartitionLedgerSpan uint32        `env:"PARTITION_LEDGER_SPAN" envDefault:"120960"`
 	LogLevel            string        `env:"LOG_LEVEL" envDefault:"info"`
 
@@ -85,6 +87,12 @@ func (c Config) Validate() error {
 	}
 	if c.RetentionLedgers == 0 {
 		return fmt.Errorf("RETENTION_LEDGERS must be positive")
+	}
+	if c.RetentionAge < 0 {
+		return fmt.Errorf("RETENTION_AGE must be non-negative")
+	}
+	if c.RetentionPoll <= 0 {
+		return fmt.Errorf("RETENTION_POLL_INTERVAL must be positive")
 	}
 	if c.PartitionLedgerSpan == 0 {
 		return fmt.Errorf("PARTITION_LEDGER_SPAN must be positive")
