@@ -43,6 +43,18 @@ make run
 
 Migrations run automatically on startup.
 
+## Supported versions
+
+SoroTrail is tested in CI against the following Postgres major versions:
+
+| Version | Status |
+| --- | --- |
+| PostgreSQL 15 | Supported |
+| PostgreSQL 16 | Supported |
+
+Any Postgres 15+ release should work; only the above versions are exercised in
+the test matrix.
+
 ## Configuration
 
 All configuration comes from environment variables (see `.env.example`):

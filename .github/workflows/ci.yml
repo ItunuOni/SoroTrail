@@ -8,9 +8,12 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        postgres-version: ["15", "16"]
     services:
       postgres:
-        image: postgres:16-alpine
+        image: postgres:${{ matrix.postgres-version }}-alpine
         env:
           POSTGRES_USER: sorotrail
           POSTGRES_PASSWORD: sorotrail
@@ -27,6 +30,14 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+      - name: Cache Go modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: go-${{ runner.os }}-${{ hashFiles('**/go.sum') }}
+          restore-keys: go-${{ runner.os }}-
       - name: Build
         run: go build ./...
       - name: Vet
@@ -34,9 +45,36 @@ jobs:
       - name: Test (with Postgres integration tests)
         # -p 1 serializes packages: the integration tests in internal/store
         # and internal/replay share one database and truncate the same tables.
-        run: go test -p 1 ./... -count=1
+        run: go test -p 1 ./... -count=1 -coverprofile=coverage.out -covermode=atomic
         env:
           TEST_DATABASE_URL: postgres://sorotrail:sorotrail@localhost:5432/sorotrail?sslmode=disable
+      - name: Upload coverage artifact
+        if: matrix.postgres-version == '16'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-pg${{ matrix.postgres-version }}
+          path: coverage.out
+          retention-days: 5
+
+  coverage:
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Download all coverage artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: coverage-pg*
+          merge-multiple: true
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          files: coverage.out
+          fail_ci_if_error: false
+          token: ${{ secrets.CODECOV_TOKEN }}
 
   lint:
     runs-on: ubuntu-latest
@@ -45,6 +83,21 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+      - name: Cache Go modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: go-${{ runner.os }}-${{ hashFiles('**/go.sum') }}
+          restore-keys: go-${{ runner.os }}-
       - uses: golangci/golangci-lint-action@v8
         with:
           version: v2.12.2
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Docker image
+        run: docker build --no-cache .
