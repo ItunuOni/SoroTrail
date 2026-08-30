@@ -499,17 +499,23 @@ func (s *Server) router() chi.Router {
 }
 
 // handleOpenAPI serves the embedded OpenAPI 3.1 specification.
+// The spec is a compiled-in static asset, so it is cacheable and
+// immutable for an hour. In multi-tenant mode the shared helper marks
+// it private — conservative but harmless: the document contains no
+// tenant data, and losing CDN pooling on a docs route is a fair price
+// for a single cache policy.
 func (s *Server) handleOpenAPI(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Cache-Control", "public, max-age=3600")
+	writeCacheHeaders(w, cacheImmutable, time.Hour, "")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(openapiSpec)
 }
 
 // handleDocs serves the Swagger UI page that renders /openapi.json.
+// Same cacheability as the spec it renders: a compiled-in static asset.
 func (s *Server) handleDocs(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Header().Set("Cache-Control", "public, max-age=3600")
+	writeCacheHeaders(w, cacheImmutable, time.Hour, "")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte(swaggerUI))
 }

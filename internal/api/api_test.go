@@ -166,6 +166,8 @@ type stubStore struct {
 
 	subscriptions []store.Subscription
 
+	subscriptions []store.Subscription
+
 	contractCursors map[string]store.ContractCursor
 }
 
