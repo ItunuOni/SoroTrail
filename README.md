@@ -131,6 +131,18 @@ data in events.topics_xdr and events.value_xdr; budget extra event-table
 storage for deployments that retain large event histories.
 Decoder replay
 Decoders improve over time. sorotrail replay re-runs the current decoder
+## Supported versions
+
+SoroTrail is tested in CI against the following Postgres major versions:
+
+| Version | Status |
+| --- | --- |
+| PostgreSQL 15 | Supported |
+| PostgreSQL 16 | Supported |
+
+Any Postgres 15+ release should work; only the above versions are exercised in
+the test matrix.
+
 ## Configuration
 
 All configuration comes from environment variables (see `.env.example`).
