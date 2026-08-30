@@ -302,6 +302,13 @@ func run() error {
 		// to parse logs to see pass/finding rates.
 		api.SetAuditor(aud)
 	}
+	var pruner *store.RetentionPruner
+	if cfg.RetentionAge > 0 {
+		pruner = store.NewRetentionPruner(st, log, store.RetentionOptions{
+			Age:          cfg.RetentionAge,
+			PollInterval: cfg.RetentionPoll,
+		})
+	}
 
 	// The pruner is constructed lazily: when neither RETENTION_MAX_AGE nor
 	// RETENTION_MIN_LEDGER is set, the pruner is a no-op goroutine that
@@ -442,7 +449,7 @@ func run() error {
 		log.Info("cors enabled", "origins", strings.Join(cfg.CORSAllowedOrigins, ","))
 	}
 
-	errCh := make(chan error, 4)
+	errCh := make(chan error, 5)
 	go func() {
 		go wh.Run(ctx)
 	}()
@@ -483,6 +490,16 @@ func run() error {
 				"max_repair_attempts", cfg.AuditMaxRepair)
 			if err := aud.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
 				errCh <- fmt.Errorf("auditor: %w", err)
+			} else {
+				errCh <- nil
+			}
+		}()
+	}
+	if pruner != nil {
+		go func() {
+			log.Info("event retention pruning starting", "age", cfg.RetentionAge, "poll_interval", cfg.RetentionPoll)
+			if err := pruner.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
+				errCh <- fmt.Errorf("retention pruner: %w", err)
 			} else {
 				errCh <- nil
 			}

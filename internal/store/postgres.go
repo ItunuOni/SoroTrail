@@ -237,6 +237,14 @@ func (p *Postgres) UpsertEvents(ctx context.Context, events []Event) (int64, err
 	return p.upsertEvents(ctx, events, false)
 }
 
+func (p *Postgres) PruneEventsBefore(ctx context.Context, cutoff time.Time) (int64, error) {
+	tag, err := p.pool.Exec(ctx, `DELETE FROM events WHERE created_at < $1`, cutoff)
+	if err != nil {
+		return 0, fmt.Errorf("pruning events before %s: %w", cutoff.Format(time.RFC3339Nano), err)
+	}
+	return tag.RowsAffected(), nil
+}
+
 // insertEventsBatch builds the single batch used by upsertEvents (idempotent
 // ingest, DO NOTHING) and ReplaceEventsInRange (auditor repair, DO UPDATE).
 // Both paths write the full events row so raw XDR is never silently dropped
