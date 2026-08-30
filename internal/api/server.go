@@ -4,6 +4,7 @@ package api
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"net/http"
 	"sync"
@@ -116,6 +117,8 @@ type Server struct {
 	tracer           trace.Tracer
 	retentionLedgers uint32
 
+	httpRequestBodyLimit int64 // max accepted request body size, in bytes
+
 	// GraphQL transport, injected by main after the server is built.
 	// internal/api/graphql imports this package for its ServerDeps, so
 	// the dependency has to run in this direction to avoid an import
@@ -155,6 +158,11 @@ type Server struct {
 	cors CORSConfig
 }
 
+// SetHTTPRequestBodyLimit sets the request body size limit, in bytes, for all handlers accepting a body.
+func (s *Server) SetHTTPRequestBodyLimit(n int64) {
+	s.httpRequestBodyLimit = n
+}
+
 // SetCompressMinSize overrides the body size at which responses are
 // compressed. Pass a negative value to disable compression.
 func (s *Server) SetCompressMinSize(n int) {
@@ -167,9 +175,12 @@ func (s *Server) SetMetricsEnabled(enabled bool) {
 }
 
 // maxLimit is the API's upper bound for page-size parameters (limit and
-// recent). It is set once at startup via SetMaxLimit (driven by the
+// recent); values above it are rejected with 400 before the store is
+// consulted. It is set once at startup via SetMaxLimit (driven by the
 // API_MAX_LIMIT env var) before any requests are served so no mutex is
-// needed. Default 500.
+// needed. Default 500 — keep it at or below store.MaxQueryLimit: the store
+// hard-clamps every query at that constant, so an API_MAX_LIMIT above 500
+// accepts limits the store then silently truncates.
 var maxLimit = 500
 
 // SetMaxLimit configures the API's maximum page size for list endpoints.
@@ -319,6 +330,12 @@ func (s *Server) router() chi.Router {
 	// unconditionally so an operator can flip the config on without
 	// restarts; CORS() is a no-op when the allowlist is empty.
 	r.Use(CORS(s.cors))
+	// Limit request body size to prevent resource exhaustion.
+	// Applied after CORS so preflight requests (OPTIONS) pass through
+	// without body size restrictions.
+	if s.httpRequestBodyLimit > 0 {
+		r.Use(s.bodyLimitMiddleware)
+	}
 	r.Use(s.recoverer.Middleware)
 	r.Use(middleware.Timeout(30 * time.Second))
 	if s.limiter != nil {
@@ -350,7 +367,7 @@ func (s *Server) router() chi.Router {
 	// collector (hand-built Server) answers 503 rather than 404.
 	r.Get("/metrics", func(w http.ResponseWriter, req *http.Request) {
 		if s.metrics == nil {
-			http.Error(w, "metrics not enabled", http.StatusServiceUnavailable)
+			writeError(w, http.StatusServiceUnavailable, errors.New("metrics not enabled"))
 			return
 		}
 		s.metrics.Handler().ServeHTTP(w, req)
@@ -539,6 +556,19 @@ func (s *Server) requestLogger(next http.Handler) http.Handler {
 			"status", ww.Status(),
 			"duration_ms", time.Since(start).Milliseconds(),
 		)
+	})
+}
+
+// bodyLimitMiddleware wraps the request body with http.MaxBytesReader to
+// enforce a maximum request body size. This prevents resource exhaustion
+// from clients sending excessively large request bodies. A limit <= 0 means
+// no limit is enforced.
+func (s *Server) bodyLimitMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if s.httpRequestBodyLimit > 0 {
+			r.Body = http.MaxBytesReader(w, r.Body, s.httpRequestBodyLimit)
+		}
+		next.ServeHTTP(w, r)
 	})
 }
 

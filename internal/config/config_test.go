@@ -17,6 +17,7 @@ import (
 const validContract = "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC"
 
 var envKeys = []string{
+	"HTTP_REQUEST_BODY_LIMIT", // body size limit
 	"RPC_URL", "RPC_URLS", "RPC_RATE_LIMIT_RPS", "RPC_RATE_LIMIT", "DATABASE_URL",
 	"POLL_INTERVAL", "HTTP_ADDR",
 	"WATCHED_CONTRACTS", "START_LEDGER", "RETENTION_LEDGERS", "INGEST_PAGE_SIZE", "INGEST_BATCH_SIZE", "LOG_LEVEL", "LOG_FORMAT",
@@ -45,6 +46,22 @@ var envKeys = []string{
 	"CORS_EXPOSED_HEADERS", "GRAPHQL_PLAYGROUND",
 }
 
+func TestLoad_FileBackedSecrets(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := dir + "/database_url.txt"
+	require.NoError(t, os.WriteFile(dbPath, []byte("postgres://user:pass@localhost/db\n"), 0o600))
+	rpcPath := dir + "/rpc_url.txt"
+	require.NoError(t, os.WriteFile(rpcPath, []byte("https://user:pass@rpc.example.com\n"), 0o600))
+
+	t.Setenv("DATABASE_URL_FILE", dbPath)
+	t.Setenv("RPC_URL_FILE", rpcPath)
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	assert.Equal(t, "postgres://user:pass@localhost/db", cfg.DatabaseURL)
+	assert.Equal(t, "https://user:pass@rpc.example.com", cfg.RPCURL)
+}
+
 func TestLoad(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -53,12 +70,21 @@ func TestLoad(t *testing.T) {
 		check   func(t *testing.T, c Config)
 	}{
 		{
+			name: "HTTP_REQUEST_BODY_LIMIT env variable overrides default",
+			env:  map[string]string{"DATABASE_URL": "postgres://localhost/db", "HTTP_REQUEST_BODY_LIMIT": "8192"},
+			check: func(t *testing.T, c Config) {
+				assert.Equal(t, int64(8192), c.HTTPRequestBodyLimit, "Request body limit from env")
+			},
+		},
+		{
 			name: "defaults with only DATABASE_URL",
 			env:  map[string]string{"DATABASE_URL": "postgres://localhost/db"},
 			check: func(t *testing.T, c Config) {
 				assert.Equal(t, 5*time.Second, c.PollInterval)
 				assert.Equal(t, ":8080", c.HTTPAddr)
 				assert.Equal(t, uint32(17280), c.RetentionLedgers)
+				assert.Zero(t, c.RetentionAge)
+				assert.Equal(t, time.Hour, c.RetentionPoll)
 				assert.Equal(t, uint32(120960), c.PartitionLedgerSpan)
 				assert.Equal(t, uint(1000), c.IngestPageSize)
 				assert.Equal(t, uint(1000), c.IngestBatchSize)
@@ -67,6 +93,7 @@ func TestLoad(t *testing.T) {
 					"LagWarnLedgers default lets the lag alarm work out of the box")
 				assert.Equal(t, 5*time.Second, c.StatsCacheTTL,
 					"StatsCacheTTL defaults to 5s")
+				assert.Equal(t, int64(1048576), c.HTTPRequestBodyLimit, "Request body limit default")
 			},
 		},
 		{
@@ -1370,4 +1397,49 @@ func TestLoad_MultiTenancy(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestParseStartLedger(t *testing.T) {
+	tests := []struct {
+		name    string
+		raw     string
+		latest  uint32
+		want    uint32
+		wantErr string
+	}{
+		{name: "absolute", raw: "12345", want: 12345},
+		{name: "absolute min ledger 2", raw: "2", want: 2},
+		{name: "absolute below min ledger rejected", raw: "1", wantErr: "must be >= 2"},
+		{name: "relative offset", raw: "latest-1000", latest: 50000, want: 49000},
+		{name: "relative offset clamps to 2", raw: "latest-100000", latest: 50000, want: 2},
+		{name: "relative offset no latest", raw: "latest-1000", wantErr: "not available"},
+		{name: "relative offset zero", raw: "latest-0", wantErr: "offset must be a positive"},
+		{name: "empty", raw: "", want: 0},
+		{name: "invalid", raw: "abc", wantErr: "not an absolute"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var got uint32
+			var err error
+			if tt.latest > 0 {
+				got, err = ParseStartLedger(tt.raw, tt.latest)
+			} else {
+				got, err = ParseStartLedger(tt.raw)
+			}
+			if tt.wantErr != "" {
+				require.ErrorContains(t, err, tt.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestLoadStartLedgerRaw(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://localhost/db")
+	t.Setenv("START_LEDGER_RAW", "latest-500")
+	cfg, err := Load()
+	require.NoError(t, err)
+	assert.Equal(t, "latest-500", cfg.StartLedgerRaw)
 }
