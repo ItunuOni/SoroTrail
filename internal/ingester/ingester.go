@@ -146,6 +146,11 @@ type Options struct {
 	BatchMaxBackoff time.Duration
 	// MaxBackoff caps the error backoff. Default 1m.
 	MaxBackoff time.Duration
+	// JitterMin and JitterMax bound the random jitter added to error
+	// backoffs. When JitterMax is zero, jitter remains proportional to the
+	// current backoff as it was before these options existed.
+	JitterMin time.Duration
+	JitterMax time.Duration
 	// SweepWindow bounds the ledger range scanned per pass when the watched
 	// list needs more than one getEvents request (see buildFilterBatches).
 	// Default 1000 ledgers.
@@ -225,6 +230,21 @@ func (o *Options) applyDefaults() {
 	}
 	if o.MaxBackoff <= 0 {
 		o.MaxBackoff = time.Minute
+	}
+	if o.MinBackoff <= 0 {
+		o.MinBackoff = time.Second
+	}
+	if o.MinBackoff > o.MaxBackoff {
+		o.MinBackoff = o.MaxBackoff
+	}
+	if o.JitterMin < 0 {
+		o.JitterMin = 0
+	}
+	if o.JitterMax < 0 {
+		o.JitterMax = 0
+	}
+	if o.JitterMax > 0 && o.JitterMin > o.JitterMax {
+		o.JitterMin = o.JitterMax
 	}
 	if o.SweepWindow == 0 {
 		o.SweepWindow = 1000
@@ -375,9 +395,24 @@ func (o *Options) logAttrs() []any {
 		"sweep_window", o.SweepWindow,
 		"sweep_concurrency", o.SweepConcurrency,
 		"max_backoff", o.MaxBackoff,
+		"min_backoff", o.MinBackoff,
+		"jitter_min", o.JitterMin,
+		"jitter_max", o.JitterMax,
 		"lag_warn_ledgers", o.LagWarnLedgers,
 		"reorg_confirmation_window", o.ReorgConfirmationWindow,
 	}
+}
+
+func (ing *Ingester) backoffSleep(backoff time.Duration) time.Duration {
+	jitterMin := ing.opts.JitterMin
+	jitterMax := ing.opts.JitterMax
+	if jitterMax == 0 {
+		jitterMax = backoff / 2
+	}
+	if jitterMax <= jitterMin {
+		return backoff/2 + jitterMin
+	}
+	return backoff/2 + jitterMin + ing.opts.Jitter(jitterMax-jitterMin)
 }
 
 // Run polls until ctx is canceled. Errors are logged and retried with
@@ -412,7 +447,7 @@ func (ing *Ingester) Run(ctx context.Context) (err error) {
 		ing.log.Info("ingester stopped")
 	}()
 
-	backoff := time.Second
+	backoff := ing.opts.MinBackoff
 	lastReorgRescanAt := time.Time{}
 	for {
 		caughtUp, err := ing.runOnce(ctx)
@@ -426,7 +461,7 @@ func (ing *Ingester) Run(ctx context.Context) (err error) {
 			ing.checkLag(ctx)
 			// Jittered exponential backoff so restarts don't thundering-herd
 			// a shared endpoint.
-			sleep := backoff/2 + ing.opts.Jitter(backoff/2)
+			sleep := ing.backoffSleep(backoff)
 			ing.log.Error("ingestion pass failed", "error", err, "retry_in", sleep)
 			if !ing.opts.Clock.SleepCtx(ctx, sleep) {
 				return ctx.Err()
@@ -439,7 +474,7 @@ func (ing *Ingester) Run(ctx context.Context) (err error) {
 			// on the cycle that noticed the gap, not PollInterval
 			// later.
 			ing.checkLag(ctx)
-			backoff = time.Second
+			backoff = ing.opts.MinBackoff
 			if caughtUp {
 				if !ing.opts.Clock.SleepCtx(ctx, ing.opts.PollInterval) {
 					return ctx.Err()

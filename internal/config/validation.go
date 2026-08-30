@@ -104,6 +104,21 @@ func (c Config) ValidateAll() error {
 		errs = append(errs, fmt.Sprintf("AUDIT_POLL_INTERVAL: %s must be a positive duration (e.g. 30s)",
 			c.AuditPollInterval))
 	}
+	if c.IngesterMinBackoff <= 0 {
+		errs = append(errs, fmt.Sprintf("INGESTER_MIN_BACKOFF: %s must be positive", c.IngesterMinBackoff))
+	}
+	if c.IngesterMaxBackoff <= 0 {
+		errs = append(errs, fmt.Sprintf("INGESTER_MAX_BACKOFF: %s must be positive", c.IngesterMaxBackoff))
+	}
+	if c.IngesterMinBackoff > c.IngesterMaxBackoff {
+		errs = append(errs, "INGESTER_MIN_BACKOFF: must not exceed INGESTER_MAX_BACKOFF")
+	}
+	if c.IngesterJitterMin < 0 || c.IngesterJitterMax < 0 {
+		errs = append(errs, "INGESTER jitter bounds must be non-negative")
+	}
+	if c.IngesterJitterMax > 0 && c.IngesterJitterMin > c.IngesterJitterMax {
+		errs = append(errs, "INGESTER_JITTER_MIN: must not exceed INGESTER_JITTER_MAX")
+	}
 
 	// --- numeric ranges -----------------------------------------------------
 
