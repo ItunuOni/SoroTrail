@@ -166,6 +166,8 @@ type stubStore struct {
 
 	subscriptions []store.Subscription
 
+	subscriptions []store.Subscription
+
 	contractCursors map[string]store.ContractCursor
 }
 
@@ -617,6 +619,10 @@ func TestListEvents_BadParams(t *testing.T) {
 		"/events?cursor=e1%3BDROP",
 		"/events?cursor=%3Cscript%3E",
 		"/events?cursor=cursor%27OR%271%3D%271",
+		"/events?topic={\"symbol\":\"transfer\"",
+		"/events?topic=[1,2",
+		"/events?from_ledger=0",
+		"/events?to_ledger=0",
 		"/events?topic_contains=not-valid-json",
 		"/events?has_value=maybe",
 	} {
@@ -1395,8 +1401,13 @@ func TestLivez(t *testing.T) {
 
 func TestReadyz(t *testing.T) {
 	t.Run("all healthy", func(t *testing.T) {
-		resp, _ := doGet(t, newTestServer(&stubStore{}, nil), "/readyz")
+		resp, body := doGet(t, newTestServer(&stubStore{}, nil), "/readyz")
 		assert.Equal(t, http.StatusOK, resp.StatusCode)
+		var h healthResponse
+		require.NoError(t, json.Unmarshal(body, &h))
+		assert.Equal(t, "ok", h.Status)
+		assert.Equal(t, "ok", h.Checks["database"])
+		assert.Equal(t, "ok", h.Checks["rpc"])
 	})
 
 	t.Run("db down returns 503 with reason", func(t *testing.T) {
@@ -2747,6 +2758,20 @@ func TestListEvents_ConfigurableMaxLimit(t *testing.T) {
 	}
 }
 
+// The API's default page cap must stay aligned with the store's hard
+// clamp: both default to 500, and raising API_MAX_LIMIT above
+// store.MaxQueryLimit would let the API accept a limit the store then
+// silently clamps, so a caller would get a short page with no error.
+// See the comments on store.MaxQueryLimit and maxLimit in server.go.
+func TestMaxLimitAlignsWithStoreClamp(t *testing.T) {
+	SetMaxLimit(500) // restore the default; other tests may have changed it
+	t.Cleanup(func() { SetMaxLimit(500) })
+
+	assert.Equal(t, store.MaxQueryLimit, maxLimit,
+		"API default maxLimit and store.MaxQueryLimit must stay in lockstep; "+
+			"an API_MAX_LIMIT above store.MaxQueryLimit is silently clamped by the store")
+}
+
 func TestGetEventTransaction_Success(t *testing.T) {
 	st := &stubStore{
 		event: store.Event{ID: "0001-0001", TxHash: "abc123"},
@@ -2874,4 +2899,8 @@ func (m *stubStore) CountDeadLetters(context.Context, string) (int64, error) {
 }
 func (m *stubStore) CountDeliveryAttempts(context.Context, int64, store.SubscriptionOwner) (int64, error) {
 	return m.deliveryAttemptsCount, m.deliveryAttemptsCountErr
+}
+
+func (s *stubStore) CountEventsBefore(context.Context, int64, time.Time, int) (int64, error) {
+	return 0, nil
 }

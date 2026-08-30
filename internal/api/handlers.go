@@ -377,6 +377,11 @@ func eventToMap(ev store.Event, fields map[string]bool) map[string]any {
 
 }
 
+// handleHealth is the liveness probe. It reports whether the process
+// is alive and able to serve HTTP requests. It intentionally does NOT
+// check external dependencies (database, RPC) so a dependency outage
+// cannot trigger a restart loop — that is the readiness probe's job
+// (see handleReadyz).
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
@@ -502,6 +507,9 @@ func (s *Server) handleDeleteEvents(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, errors.New("deleting events failed"))
 		return
 	}
+	// A destructive write must never be replayed from a cache: the same
+	// URL answered twice could delete a different range the second time.
+	writeCacheHeaders(w, cacheNoStore, 0, "")
 	writeJSON(w, http.StatusOK, map[string]int64{"deleted": deleted})
 }
 
@@ -1698,6 +1706,9 @@ func (s *Server) handleListWatchedChains(w http.ResponseWriter, r *http.Request)
 
 	}
 
+	// The watch list is operator state that changes whenever a contract
+	// is added or removed; a cached copy would silently go stale.
+	writeCacheHeaders(w, cacheNoStore, 0, "")
 	// The whole watch list is returned on one page, so the total is just
 	// the page size; no separate count query is needed.
 	w.Header().Set("X-Total-Count", fmt.Sprintf("%d", len(contracts)))
@@ -1802,6 +1813,10 @@ func (s *Server) handleAddWatchedChain(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// A write whose result depends on ingestion state must never be
+	// replayed from a cache.
+	writeCacheHeaders(w, cacheNoStore, 0, "")
+
 	writeJSON(w, http.StatusOK, addWatchedResponse{
 
 		ContractID: req.ContractID,
@@ -1878,6 +1893,10 @@ func (s *Server) handleRemoveWatchedChain(w http.ResponseWriter, r *http.Request
 		return
 
 	}
+
+	// A write whose result depends on ingestion state must never be
+	// replayed from a cache.
+	writeCacheHeaders(w, cacheNoStore, 0, "")
 
 	writeJSON(w, http.StatusOK, removeWatchedResponse{
 
@@ -2707,7 +2726,7 @@ func (s *Server) handleEventStreamWS(w http.ResponseWriter, r *http.Request) {
 
 	if s.bcast == nil {
 
-		http.Error(w, "streaming not configured", http.StatusNotImplemented)
+		writeError(w, http.StatusNotImplemented, errors.New("streaming not configured"))
 
 		return
 

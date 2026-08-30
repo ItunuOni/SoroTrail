@@ -301,6 +301,7 @@ func validBase() Config {
 		IngesterMinBackoff:  time.Second,
 		IngesterMaxBackoff:  time.Minute,
 		LogLevel:            "info",
+		LogFormat:           "text",
 	}
 }
 
